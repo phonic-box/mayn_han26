@@ -42,20 +42,24 @@ var SongLogic = (function () {
     return selection !== ALL;
   }
 
+  function matchesFilter(song, selection, filter) {
+    if (filter === 'performed') return isPerformedIn(song, selection);
+    if (filter === 'unperformed') return !isPerformedIn(song, selection);
+    return true;
+  }
+
   /**
    * @param {Object[]} songs
-   * @param {{selection: string, query: string, filter: 'all'|'performed'|'unperformed'}} state
+   * @param {{selection: string, query: string, filter: 'all'|'performed'|'unperformed', keepIds?: string[]}} state
+   *   keepIds の曲は絞り込みに合わなくても残す（保存中の曲が一覧から消えないように）
    * @return {{items: Object[]}}
    */
   function buildView(songs, state) {
     var selection = state.selection;
+    var keepIds = state.keepIds || [];
     var items = songs.filter(function (song) {
-      if (state.filter === 'performed') {
-        if (!isPerformedIn(song, selection)) return false;
-      } else if (state.filter === 'unperformed') {
-        if (isPerformedIn(song, selection)) return false;
-      }
-      return matchesQuery(song, state.query);
+      var kept = keepIds.indexOf(song.song_id) !== -1;
+      return (kept || matchesFilter(song, selection, state.filter)) && matchesQuery(song, state.query);
     });
     items.sort(compareSongs);
     return { items: items };

@@ -10,7 +10,7 @@
     songs: [],
     selection: L.ALL,
     query: '',
-    filter: 'all',
+    filter: 'performed',  // 全公演の初期表示は「披露済み」で絞り込み
     pending: {},        // songId -> { showId, performed } 保存中の操作
     loading: false,
     loadedAt: 0
@@ -123,7 +123,8 @@
     var view = L.buildView(viewSongs(), {
       selection: selection,
       query: state.query,
-      filter: state.filter
+      filter: state.filter,
+      keepIds: Object.keys(state.pending)
     });
 
 
@@ -290,8 +291,17 @@
   // イベント
   // -------------------------------------------------------------------------
 
+  function setFilter(filter) {
+    state.filter = filter;
+    Array.prototype.forEach.call(els.filter.querySelectorAll('button'), function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.filter === filter));
+    });
+  }
+
   els.select.addEventListener('change', function () {
     state.selection = els.select.value;
+    // 全公演は披露済みの確認用、個別公演はこれからチェックする未披露曲から
+    setFilter(L.isShowSelection(state.selection) ? 'unperformed' : 'performed');
     render();
     window.scrollTo(0, 0);
   });
@@ -304,11 +314,7 @@
   els.filter.addEventListener('click', function (event) {
     var button = event.target.closest('button[data-filter]');
     if (!button) return;
-    // 押されているボタンをもう一度押すと解除して全曲表示に戻す
-    state.filter = state.filter === button.dataset.filter ? 'all' : button.dataset.filter;
-    Array.prototype.forEach.call(els.filter.querySelectorAll('button'), function (b) {
-      b.setAttribute('aria-pressed', String(b.dataset.filter === state.filter));
-    });
+    setFilter(button.dataset.filter);
     render();
   });
 

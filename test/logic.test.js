@@ -37,6 +37,11 @@ test('個別公演では、その公演に対して披露済み／未披露を�
   assert.deepEqual(ids(build({ selection: 'P001', filter: 'unperformed' })), ['S003', 'S004', 'S002']);
 });
 
+test('keepIds の曲は絞り込みに合わなくても残る（保存中の曲）', () => {
+  assert.deepEqual(ids(build({ selection: 'P001', filter: 'unperformed', keepIds: ['S001'] })), ['S003', 'S004', 'S002', 'S001']);
+  assert.deepEqual(ids(build({ selection: 'P001', filter: 'unperformed', keepIds: ['S001'], query: 'Zeb' })), ['S003']);
+});
+
 test('T08: 曲名・読みの部分一致検索（全角半角・カタカナを吸収）', () => {
   assert.deepEqual(ids(build({ query: '楽曲' })), ['S002', 'S001']);
   assert.deepEqual(ids(build({ query: 'ガッキョクエ' })), ['S002']);
