@@ -17,8 +17,9 @@
     --warn-soft: #fff4d6;
     --danger: #e0402a;
     --grad: linear-gradient(to right, var(--orange), var(--coral));
-    --font-body: "Kosugi Maru", "Hiragino Maru Gothic ProN", "Hiragino Sans", "Noto Sans JP", sans-serif;
-    --font-head: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Hiragino Sans", sans-serif;
+    /* 先頭の Nunito は引用符 ‘’“” だけのサブセット。日本語フォントだと全角幅になるため */
+    --font-body: "Nunito", "Kosugi Maru", "Hiragino Maru Gothic ProN", "Hiragino Sans", "Noto Sans JP", sans-serif;
+    --font-head: "Nunito", "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Hiragino Sans", sans-serif;
     --font-pop: "Darumadrop One", "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", sans-serif;
     color-scheme: light;
   }
@@ -142,6 +143,7 @@
   label.row:active { transform: scale(.99); }
   .text { flex: 1; min-width: 0; }
   .song-title { display: block; font-size: 16px; overflow-wrap: anywhere; }
+  .quote { font-family: "Nunito", -apple-system, "Helvetica Neue", Roboto, Arial, sans-serif; }
   .song-reading { display: block; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
   .shows { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
   .chip {

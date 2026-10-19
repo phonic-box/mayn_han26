@@ -143,12 +143,31 @@
     els.empty.hidden = view.items.length > 0 || !state.loadedAt;
   }
 
+  /**
+   * 曲名を描画する。引用符 ‘’“” は日本語フォントだと全角幅になるので、
+   * lang="en" の span で包んで欧文フォントで表示させる（textContent のみ使用）。
+   */
+  function appendTitleText(el, text) {
+    String(text).split(/([‘’“”])/).forEach(function (part, i) {
+      if (!part) return;
+      if (i % 2 === 0) {
+        el.appendChild(document.createTextNode(part));
+        return;
+      }
+      var quote = document.createElement('span');
+      quote.className = 'quote';
+      quote.lang = 'en';
+      quote.textContent = part;
+      el.appendChild(quote);
+    });
+  }
+
   function textBlock(song) {
     var box = document.createElement('span');
     box.className = 'text';
     var title = document.createElement('span');
     title.className = 'song-title';
-    title.textContent = song.title;
+    appendTitleText(title, song.title);
     box.appendChild(title);
     if (song.reading) {
       var reading = document.createElement('span');

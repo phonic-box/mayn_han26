@@ -12,6 +12,8 @@ var SongLogic = (function () {
       .normalize('NFKC')
       .toLowerCase()
       .replace(/[ァ-ヶ]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0x60); })
+      .replace(/[‘’]/g, "'")
+      .replace(/[“”]/g, '"')
       .replace(/\s+/g, '');
   }
 
