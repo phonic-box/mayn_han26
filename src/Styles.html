@@ -1,0 +1,204 @@
+<style>
+  /* ツアー特設サイトのポップなテイスト（コーラル × ライム × スカイ、丸ゴシック）に寄せた配色 */
+  :root {
+    --bg: #e9eff3;
+    --card: rgba(255, 255, 255, 0.86);
+    --text: #40243a;
+    --muted: #8a7486;
+    --line: #f3d9d3;
+    --coral: #ff7155;
+    --salmon: #ffa390;
+    --orange: #ffb15c;
+    --lime: #e1f380;
+    --sky: #69caf7;
+    --sky-soft: #def3fd;
+    --coral-soft: #ffe9e4;
+    --warn: #b0611a;
+    --warn-soft: #fff4d6;
+    --danger: #e0402a;
+    --grad: linear-gradient(to right, var(--orange), var(--coral));
+    --font-body: "Kosugi Maru", "Hiragino Maru Gothic ProN", "Hiragino Sans", "Noto Sans JP", sans-serif;
+    --font-head: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Hiragino Sans", sans-serif;
+    --font-pop: "Darumadrop One", "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", sans-serif;
+    color-scheme: light;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.6 var(--font-body);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  button, input, select { font: inherit; color: inherit; }
+
+  .visually-hidden {
+    position: absolute; width: 1px; height: 1px; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap;
+  }
+
+  /* 背景の飾り：ドットとななめストライプ */
+  .deco { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+  .deco::before, .deco::after { content: ""; position: absolute; }
+  .deco::before {
+    top: -40px; left: -60px; width: 260px; height: 260px;
+    background: radial-gradient(var(--salmon) 2.2px, transparent 2.6px) 0 0 / 12px 12px;
+    -webkit-mask: linear-gradient(135deg, #000 20%, transparent 70%);
+    mask: linear-gradient(135deg, #000 20%, transparent 70%);
+    opacity: .75;
+  }
+  .deco::after {
+    right: -80px; bottom: -40px; width: 300px; height: 300px;
+    background: repeating-linear-gradient(-45deg, var(--lime) 0 6px, transparent 6px 14px);
+    -webkit-mask: linear-gradient(315deg, #000 15%, transparent 65%);
+    mask: linear-gradient(315deg, #000 15%, transparent 65%);
+  }
+
+  /* ヘッダー（スクロールしても公演選択・検索が見える） */
+  .top {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(255, 255, 255, 0.9);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border-radius: 0 0 28px 28px;
+    box-shadow: 0 6px 18px rgba(64, 36, 58, 0.08);
+    padding: calc(env(safe-area-inset-top, 0px) + 10px) 16px 12px;
+  }
+  .top-inner, main { max-width: 640px; margin: 0 auto; }
+  .title-row { display: flex; align-items: center; gap: 8px; }
+  h1 { flex: 1; margin: 0; font-weight: 400; line-height: 1.2; }
+  .eyebrow {
+    display: block; font: 800 11px/1.4 var(--font-head); color: var(--coral); letter-spacing: .04em;
+  }
+  .eyebrow > span { display: inline-block; }
+  .headline {
+    display: inline-block; margin-top: 2px;
+    font-family: var(--font-pop); font-size: 26px; letter-spacing: .04em;
+    background: linear-gradient(transparent 70%, var(--salmon) 70%);
+    padding: 0 4px;
+  }
+
+  .icon-btn {
+    min-width: 44px; min-height: 44px; border: 0; border-radius: 50%;
+    background: var(--coral-soft); color: var(--coral);
+    font-size: 22px; font-weight: 700; cursor: pointer;
+  }
+  .icon-btn:active { transform: scale(.94); }
+  .icon-btn:disabled { opacity: .5; }
+  .icon-btn.small { min-width: 36px; min-height: 36px; font-size: 18px; }
+
+  select, input[type="search"], input[type="text"] {
+    width: 100%; min-height: 46px; margin-top: 10px; padding: 8px 16px;
+    border: 2px solid var(--line); border-radius: 999px;
+    background: #fff;
+    font-size: 16px; /* iOS の自動ズームを防ぐ */
+    outline: none;
+  }
+  select:focus, input:focus { border-color: var(--salmon); }
+  select {
+    appearance: none; -webkit-appearance: none;
+    font-family: var(--font-head); font-weight: 800; color: var(--text);
+    background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='10' viewBox='0 0 14 10'%3E%3Cpath d='M1 1.5l6 6 6-6' fill='none' stroke='%23ff7155' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 18px center;
+    padding-right: 44px;
+  }
+
+  .segmented {
+    display: flex; gap: 4px; margin-top: 10px; padding: 4px;
+    background: var(--coral-soft); border-radius: 999px;
+  }
+  .segmented button {
+    flex: 1; min-height: 36px; border: 0; border-radius: 999px;
+    background: transparent; color: var(--coral); cursor: pointer;
+    font: 800 13px var(--font-head);
+  }
+  .segmented button[aria-pressed="true"] { background: var(--grad); color: #fff; box-shadow: 0 2px 6px rgba(255, 113, 85, .35); }
+
+  main { padding: 12px 16px 28px; }
+  .hint {
+    margin: 4px 4px 10px; font: 800 13px/1.5 var(--font-head); color: #3b3560;
+  }
+  .hint::before { content: "♪ "; color: var(--coral); }
+
+  .status {
+    margin: 8px 0; padding: 10px 16px; border-radius: 18px;
+    background: var(--warn-soft); color: var(--warn); font-size: 14px;
+  }
+  .status.error { background: var(--coral-soft); color: var(--danger); }
+
+  /* 楽曲一覧 */
+  .song-list { list-style: none; margin: 0; padding: 0; }
+  .song-list li {
+    background: var(--card);
+    border: 2px solid transparent;
+    border-radius: 22px;
+    margin-bottom: 8px;
+    box-shadow: 0 2px 8px rgba(64, 36, 58, 0.05);
+    transition: border-color .15s, background-color .15s;
+  }
+  .row { display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 10px 14px 10px 18px; }
+  label.row { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  label.row:active { transform: scale(.99); }
+  .text { flex: 1; min-width: 0; }
+  .song-title { display: block; font-size: 16px; overflow-wrap: anywhere; }
+  .song-reading { display: block; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+  .shows { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .chip {
+    font-size: 11px; padding: 1px 10px; border-radius: 999px;
+    background: var(--lime); color: var(--text);
+  }
+  .chip.warn { background: var(--warn-soft); color: var(--warn); }
+
+  .badge {
+    flex: none; padding: 3px 12px; border-radius: 999px;
+    font: 800 12px var(--font-head);
+  }
+  .badge.performed { background: var(--grad); color: #fff; }
+  .badge.unperformed { background: var(--sky-soft); color: #1f7fae; }
+
+  /* まるいチェック */
+  .check {
+    flex: none; appearance: none; -webkit-appearance: none;
+    width: 34px; height: 34px; margin: 0; border-radius: 50%;
+    border: 2.5px solid var(--salmon); background: #fff;
+    display: grid; place-items: center; cursor: pointer;
+    transition: background .15s, transform .15s;
+  }
+  .check::after {
+    content: ""; width: 9px; height: 16px; margin-top: -4px;
+    border: solid #fff; border-width: 0 3.5px 3.5px 0; border-radius: 1px;
+    transform: rotate(45deg) scale(0); transition: transform .15s;
+  }
+  .check:checked { background: var(--grad); border-color: var(--coral); }
+  .check:checked::after { transform: rotate(45deg) scale(1); }
+  .check:focus-visible { outline: 3px solid var(--sky); outline-offset: 2px; }
+  .check:disabled { cursor: default; }
+  li.is-checked { border-color: var(--salmon); background: #fff; }
+  li.is-saving { opacity: .6; }
+  li.is-saving .saving { display: block; }
+  .saving { display: none; font-size: 12px; color: var(--coral); }
+
+  .empty { text-align: center; color: var(--muted); padding: 28px 0; font-family: var(--font-head); font-weight: 800; }
+
+  .btn {
+    min-height: 44px; padding: 8px 18px; border: 2px solid var(--line); border-radius: 999px;
+    background: #fff; cursor: pointer; font: 800 14px var(--font-head);
+  }
+  .btn.small { min-height: 34px; padding: 4px 14px; font-size: 13px; }
+  .btn:disabled { opacity: .5; cursor: default; }
+
+  .toast {
+    position: fixed; left: 12px; right: 12px; z-index: 20;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+    max-width: 616px; margin: 0 auto;
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 10px 10px 18px; border-radius: 24px;
+    background: var(--danger); color: #fff; font-size: 14px;
+    box-shadow: 0 8px 22px rgba(64, 36, 58, .25);
+  }
+  .toast[hidden] { display: none; }
+  .toast span { flex: 1; overflow-wrap: anywhere; }
+  .toast .btn { background: #fff; color: var(--danger); border: 0; }
+  .toast .icon-btn { background: transparent; color: #fff; }
+</style>

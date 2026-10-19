@@ -1,0 +1,9 @@
+{
+  "name": "mayn-request-live",
+  "private": true,
+  "description": "May'n ひらがな はんぐじゃむ 披露楽曲管理ツール（Google Apps Script）",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "preview": "node dev/build-preview.js && python3 -m http.server 8765 --directory dist"
+  }
+}

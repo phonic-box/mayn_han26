@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <base target="_top">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Darumadrop+One&family=Kosugi+Maru&family=M+PLUS+Rounded+1c:wght@800;900&display=swap">
+    <?!= include('Styles'); ?>
+  </head>
+  <body>
+    <div class="deco" aria-hidden="true"></div>
+    <header class="top">
+      <div class="top-inner">
+        <div class="title-row">
+          <h1>
+            <span class="eyebrow"><span>May'n All Requests Live Tour 2026</span> <span>「ひらがな はんぐじゃむ」</span></span>
+            <span class="headline">ひろうきょく きろく</span>
+          </h1>
+          <button type="button" id="reload" class="icon-btn" aria-label="最新のデータを読み込む">↻</button>
+        </div>
+
+        <label class="visually-hidden" for="show-select">公演を選択</label>
+        <select id="show-select" disabled>
+          <option>読み込み中…</option>
+        </select>
+
+        <label class="visually-hidden" for="search">曲名・読みで検索</label>
+        <input type="search" id="search" placeholder="曲名・読みで検索" autocomplete="off" enterkeyhint="search">
+
+        <div id="filter" class="segmented" role="group" aria-label="表示する曲で絞り込む（もう一度押すと解除）">
+          <button type="button" data-filter="performed" aria-pressed="false">披露済み</button>
+          <button type="button" data-filter="unperformed" aria-pressed="false">未披露</button>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <p id="mode-hint" class="hint"></p>
+      <div id="status" class="status" role="status" hidden></div>
+      <ul id="song-list" class="song-list"></ul>
+      <p id="empty" class="empty" hidden>該当する曲はありません。</p>
+
+    </main>
+
+    <div id="toast" class="toast" role="alert" hidden>
+      <span id="toast-text"></span>
+      <button type="button" id="toast-reload" class="btn small">再読み込み</button>
+      <button type="button" id="toast-close" class="icon-btn small" aria-label="閉じる">×</button>
+    </div>
+
+    <?!= include('Logic'); ?>
+    <?!= include('Scripts'); ?>
+  </body>
+</html>

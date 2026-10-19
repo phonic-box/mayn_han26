@@ -1,0 +1,333 @@
+<script>
+(function () {
+  'use strict';
+
+  var L = SongLogic;
+  var AUTO_REFRESH_MS = 60 * 1000;
+
+  var state = {
+    shows: [],
+    songs: [],
+    selection: L.ALL,
+    query: '',
+    filter: 'all',
+    pending: {},        // songId -> { showId, performed } 保存中の操作
+    loading: false,
+    loadedAt: 0
+  };
+
+  var $ = function (id) { return document.getElementById(id); };
+  var els = {
+    select: $('show-select'),
+    reload: $('reload'),
+    search: $('search'),
+    filter: $('filter'),
+    hint: $('mode-hint'),
+    status: $('status'),
+    list: $('song-list'),
+    empty: $('empty'),
+    toast: $('toast'),
+    toastText: $('toast-text'),
+    toastReload: $('toast-reload'),
+    toastClose: $('toast-close')
+  };
+
+  // google.script.run を Promise 化
+  function callServer(name) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    return new Promise(function (resolve, reject) {
+      var runner = google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);
+      runner[name].apply(runner, args);
+    });
+  }
+
+  function errorMessage(err) {
+    var msg = (err && err.message) || String(err || '');
+    return msg.replace(/^Exception:\s*/, '') || '通信に失敗しました。';
+  }
+
+  // -------------------------------------------------------------------------
+  // データ読み込み
+  // -------------------------------------------------------------------------
+
+  function load() {
+    if (state.loading) return;
+    state.loading = true;
+    els.reload.disabled = true;
+    showStatus(state.songs.length ? '最新のデータを読み込み中…' : '読み込み中…');
+
+    callServer('getInitialData')
+      .then(function (data) {
+        state.shows = data.shows;
+        state.songs = data.songs;
+        state.loadedAt = Date.now();
+        if (L.isShowSelection(state.selection) && !findShow(state.selection)) {
+          state.selection = L.ALL;
+        }
+        hideStatus();
+        renderSelect();
+        render();
+      })
+      .catch(function (err) {
+        showStatus('データを読み込めませんでした：' + errorMessage(err) + '　↻ で再読み込みしてください。', true);
+      })
+      .then(function () {
+        state.loading = false;
+        els.reload.disabled = false;
+      });
+  }
+
+  function findShow(showId) {
+    for (var i = 0; i < state.shows.length; i++) {
+      if (state.shows[i].show_id === showId) return state.shows[i];
+    }
+    return null;
+  }
+
+  function showLabel(show) {
+    return show.show_date ? show.show_name + '（' + show.show_date + '）' : show.show_name;
+  }
+
+  // -------------------------------------------------------------------------
+  // 描画
+  // -------------------------------------------------------------------------
+
+  function renderSelect() {
+    var select = els.select;
+    select.textContent = '';
+    select.appendChild(new Option('全公演', L.ALL));
+    var group = document.createElement('optgroup');
+    group.label = '公演ごとに記録';
+    state.shows.forEach(function (show) {
+      group.appendChild(new Option(showLabel(show), show.show_id));
+    });
+    select.appendChild(group);
+    select.value = state.selection;
+    select.disabled = false;
+  }
+
+  /** 保存中の操作を画面上の状態に重ねる（サーバー確定までは見た目だけ）。 */
+  function viewSongs() {
+    return state.songs.map(function (song) {
+      var p = state.pending[song.song_id];
+      if (!p) return song;
+      var ids = song.performed_show_ids.filter(function (id) { return id !== p.showId; });
+      if (p.performed) ids.push(p.showId);
+      return Object.assign({}, song, { performed_show_ids: ids });
+    });
+  }
+
+  function render() {
+    var selection = state.selection;
+    var isShow = L.isShowSelection(selection);
+    var view = L.buildView(viewSongs(), {
+      selection: selection,
+      query: state.query,
+      filter: state.filter
+    });
+
+
+    if (selection === L.ALL) {
+      els.hint.textContent = '閲覧モード：記録するには上で公演を選んでください。';
+    } else {
+      els.hint.textContent = '「' + showLabel(findShow(selection)) + '」で歌われた曲にチェックを付けてください。';
+    }
+
+    var fragment = document.createDocumentFragment();
+    view.items.forEach(function (song) {
+      fragment.appendChild(isShow ? renderEditableRow(song, selection) : renderReadonlyRow(song));
+    });
+    els.list.textContent = '';
+    els.list.appendChild(fragment);
+    els.empty.hidden = view.items.length > 0 || !state.loadedAt;
+  }
+
+  function textBlock(song) {
+    var box = document.createElement('span');
+    box.className = 'text';
+    var title = document.createElement('span');
+    title.className = 'song-title';
+    title.textContent = song.title;
+    box.appendChild(title);
+    if (song.reading) {
+      var reading = document.createElement('span');
+      reading.className = 'song-reading';
+      reading.textContent = song.reading;
+      box.appendChild(reading);
+    }
+    return box;
+  }
+
+  function errorChip(song) {
+    var chip = document.createElement('span');
+    chip.className = 'chip warn';
+    chip.textContent = '⚠ データ破損：シートを確認';
+    chip.title = song.data_error;
+    return chip;
+  }
+
+  function renderReadonlyRow(song) {
+    var li = document.createElement('li');
+    var row = document.createElement('div');
+    row.className = 'row';
+    var text = textBlock(song);
+
+    var chips = document.createElement('span');
+    chips.className = 'shows';
+    if (song.data_error) chips.appendChild(errorChip(song));
+    song.performed_show_ids.forEach(function (id) {
+      var show = findShow(id);
+      var chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.textContent = show ? show.show_name : id;
+      chips.appendChild(chip);
+    });
+    if (chips.childNodes.length) text.appendChild(chips);
+
+    var performed = song.performed_show_ids.length > 0;
+    var badge = document.createElement('span');
+    badge.className = 'badge ' + (performed ? 'performed' : 'unperformed');
+    badge.textContent = performed ? '披露済み' : '未披露';
+
+    row.appendChild(text);
+    row.appendChild(badge);
+    li.appendChild(row);
+    return li;
+  }
+
+  function renderEditableRow(song, showId) {
+    var li = document.createElement('li');
+    var checked = song.performed_show_ids.indexOf(showId) !== -1;
+    var saving = !!state.pending[song.song_id];
+    if (checked) li.classList.add('is-checked');
+    if (saving) li.classList.add('is-saving');
+
+    var row = document.createElement('label');
+    row.className = 'row';
+    var text = textBlock(song);
+    var savingNote = document.createElement('span');
+    savingNote.className = 'saving';
+    savingNote.textContent = '保存中…';
+    text.appendChild(savingNote);
+    if (song.data_error) text.appendChild(errorChip(song));
+
+    var box = document.createElement('input');
+    box.type = 'checkbox';
+    box.className = 'check';
+    box.checked = checked;
+    box.disabled = saving || !!song.data_error;
+    box.dataset.songId = song.song_id;
+    box.setAttribute('aria-label', song.title + ' をこの公演で披露済みにする');
+
+    row.appendChild(text);
+    row.appendChild(box);
+    li.appendChild(row);
+    return li;
+  }
+
+  function showStatus(message, isError) {
+    els.status.textContent = message;
+    els.status.classList.toggle('error', !!isError);
+    els.status.hidden = false;
+  }
+
+  function hideStatus() {
+    els.status.hidden = true;
+  }
+
+  function showToast(message) {
+    els.toastText.textContent = message;
+    els.toast.hidden = false;
+  }
+
+  // -------------------------------------------------------------------------
+  // 披露記録の更新
+  // -------------------------------------------------------------------------
+
+  function onCheck(event) {
+    var box = event.target;
+    if (!box.classList || !box.classList.contains('check')) return;
+    var songId = box.dataset.songId;
+    var showId = state.selection;
+    if (!L.isShowSelection(showId) || state.pending[songId]) return;
+
+    var performed = box.checked;
+    state.pending[songId] = { showId: showId, performed: performed };
+    render();
+
+    callServer('setSongPerformance', songId, showId, performed)
+      .then(function (updated) {
+        replaceSong(updated);
+      })
+      .catch(function (err) {
+        var song = findSong(songId);
+        showToast('「' + (song ? song.title : songId) + '」を保存できませんでした：' + errorMessage(err));
+      })
+      .then(function () {
+        delete state.pending[songId];
+        render();
+      });
+  }
+
+  function findSong(songId) {
+    for (var i = 0; i < state.songs.length; i++) {
+      if (state.songs[i].song_id === songId) return state.songs[i];
+    }
+    return null;
+  }
+
+  function replaceSong(updated) {
+    var found = false;
+    state.songs = state.songs.map(function (s) {
+      if (s.song_id !== updated.song_id) return s;
+      found = true;
+      return updated;
+    });
+    if (!found) state.songs.push(updated);
+  }
+
+  // -------------------------------------------------------------------------
+  // イベント
+  // -------------------------------------------------------------------------
+
+  els.select.addEventListener('change', function () {
+    state.selection = els.select.value;
+    render();
+    window.scrollTo(0, 0);
+  });
+
+  els.search.addEventListener('input', function () {
+    state.query = els.search.value;
+    render();
+  });
+
+  els.filter.addEventListener('click', function (event) {
+    var button = event.target.closest('button[data-filter]');
+    if (!button) return;
+    // 押されているボタンをもう一度押すと解除して全曲表示に戻す
+    state.filter = state.filter === button.dataset.filter ? 'all' : button.dataset.filter;
+    Array.prototype.forEach.call(els.filter.querySelectorAll('button'), function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.filter === state.filter));
+    });
+    render();
+  });
+
+  els.list.addEventListener('change', onCheck);
+  els.reload.addEventListener('click', load);
+
+  els.toastClose.addEventListener('click', function () { els.toast.hidden = true; });
+  els.toastReload.addEventListener('click', function () {
+    els.toast.hidden = true;
+    load();
+  });
+
+  // スマホでアプリに戻ってきたとき、古いデータなら自動で読み直す
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible' && Date.now() - state.loadedAt > AUTO_REFRESH_MS) {
+      load();
+    }
+  });
+
+  load();
+})();
+</script>

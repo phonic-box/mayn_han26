@@ -1,0 +1,74 @@
+<script>
+/**
+ * 画面の表示判定（純粋関数）。保存データは変更しない。
+ * test/logic.test.js からも読み込んで検証する。
+ */
+var SongLogic = (function () {
+  var ALL = '__all__';
+  var collator = new Intl.Collator('ja');
+
+  function normalize(text) {
+    return String(text || '')
+      .normalize('NFKC')
+      .toLowerCase()
+      .replace(/[ァ-ヶ]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0x60); })
+      .replace(/\s+/g, '');
+  }
+
+  function sortKey(song) {
+    return normalize(song.reading || song.title);
+  }
+
+  /** reading の 50 音順。reading が無い曲は title で代用する。 */
+  function compareSongs(a, b) {
+    return collator.compare(sortKey(a), sortKey(b)) ||
+      collator.compare(a.title, b.title) ||
+      collator.compare(a.song_id, b.song_id);
+  }
+
+  function matchesQuery(song, query) {
+    var q = normalize(query);
+    if (!q) return true;
+    return normalize(song.title).indexOf(q) !== -1 || normalize(song.reading).indexOf(q) !== -1;
+  }
+
+  /** 選択中の対象（個別公演ならその公演、全公演ならツアー全体）で披露済みか。 */
+  function isPerformedIn(song, selection) {
+    if (selection === ALL) return song.performed_show_ids.length > 0;
+    return song.performed_show_ids.indexOf(selection) !== -1;
+  }
+
+  function isShowSelection(selection) {
+    return selection !== ALL;
+  }
+
+  /**
+   * @param {Object[]} songs
+   * @param {{selection: string, query: string, filter: 'all'|'performed'|'unperformed'}} state
+   * @return {{items: Object[]}}
+   */
+  function buildView(songs, state) {
+    var selection = state.selection;
+    var items = songs.filter(function (song) {
+      if (state.filter === 'performed') {
+        if (!isPerformedIn(song, selection)) return false;
+      } else if (state.filter === 'unperformed') {
+        if (isPerformedIn(song, selection)) return false;
+      }
+      return matchesQuery(song, state.query);
+    });
+    items.sort(compareSongs);
+    return { items: items };
+  }
+
+  return {
+    ALL: ALL,
+    normalize: normalize,
+    compareSongs: compareSongs,
+    matchesQuery: matchesQuery,
+    isPerformedIn: isPerformedIn,
+    isShowSelection: isShowSelection,
+    buildView: buildView
+  };
+})();
+</script>
