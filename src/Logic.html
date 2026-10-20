@@ -28,10 +28,16 @@ var SongLogic = (function () {
       collator.compare(a.song_id, b.song_id);
   }
 
+  /** 先頭一致用のキー。「「愛してる」なんて」を「愛」で引けるよう、先頭の括弧・引用符は飛ばす */
+  function prefixKey(text) {
+    return normalize(text).replace(/^[「『【〈《（(\[{'"]+/, '');
+  }
+
+  /** 曲名または読みの先頭一致 */
   function matchesQuery(song, query) {
-    var q = normalize(query);
+    var q = prefixKey(query);
     if (!q) return true;
-    return normalize(song.title).indexOf(q) !== -1 || normalize(song.reading).indexOf(q) !== -1;
+    return prefixKey(song.title).indexOf(q) === 0 || prefixKey(song.reading).indexOf(q) === 0;
   }
 
   /** 選択中の対象（個別公演ならその公演、全公演ならツアー全体）で披露済みか。 */
@@ -52,19 +58,21 @@ var SongLogic = (function () {
 
   /**
    * @param {Object[]} songs
-   * @param {{selection: string, query: string, filter: 'all'|'performed'|'unperformed', keepIds?: string[]}} state
-   *   keepIds の曲は絞り込みに合わなくても残す（保存中の曲が一覧から消えないように）
+   * @param {{selection: string, query: string, filter: 'all'|'performed'|'unperformed'}} state
    * @return {{items: Object[]}}
    */
   function buildView(songs, state) {
     var selection = state.selection;
-    var keepIds = state.keepIds || [];
     var items = songs.filter(function (song) {
-      var kept = keepIds.indexOf(song.song_id) !== -1;
-      return (kept || matchesFilter(song, selection, state.filter)) && matchesQuery(song, state.query);
+      return matchesFilter(song, selection, state.filter) && matchesQuery(song, state.query);
     });
     items.sort(compareSongs);
     return { items: items };
+  }
+
+  /** セットリスト（サーバーで曲順に並べ済み）を検索語で絞る。順番は変えない */
+  function filterSetlist(entries, query) {
+    return (entries || []).filter(function (entry) { return matchesQuery(entry, query); });
   }
 
   return {
@@ -74,7 +82,8 @@ var SongLogic = (function () {
     matchesQuery: matchesQuery,
     isPerformedIn: isPerformedIn,
     isShowSelection: isShowSelection,
-    buildView: buildView
+    buildView: buildView,
+    filterSetlist: filterSetlist
   };
 })();
 </script>

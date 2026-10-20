@@ -1,16 +1,19 @@
 /**
  * May'n ひらがな はんぐじゃむ 披露楽曲管理 — サーバー側（Google Apps Script）
  *
- * 永続データは Songs / Shows の 2 シートのみ。
- * 「全公演」「未披露」は画面側で算出する仮想選択肢で、シートには保存しない。
+ * データは Songs / Shows / Setlists の 3 シート。管理者がスプレッドシートで登録し、
+ * Web アプリは閲覧専用（データを書き換える関数は公開しない）。
+ * 曲ごとの「披露済み／未披露」は Setlists から都度算出し、シートには保存しない。
  */
 
 var APP_TITLE = "May'n ひらがな はんぐじゃむ｜楽曲管理";
 var SONGS_SHEET = 'Songs';
 var SHOWS_SHEET = 'Shows';
-var SONG_HEADERS = ['song_id', 'title', 'reading', 'performed_show_ids'];
+var SETLISTS_SHEET = 'Setlists';
+var SONG_HEADERS = ['song_id', 'title', 'reading'];
 var SHOW_HEADERS = ['show_id', 'show_name', 'show_date', 'venue', 'sort_order'];
-var LOCK_TIMEOUT_MS = 10000;
+var SETLIST_HEADERS = ['show', 'no', 'title'];
+var MIGRATED_PROPERTY = 'CHECKS_MIGRATED';
 
 // 説明・動作確認用のダミーデータ。実データではない。
 var SAMPLE_SHOWS = [
@@ -20,12 +23,17 @@ var SAMPLE_SHOWS = [
   ['P004', '東京公演 2日目（サンプル）', '', '', 4]
 ];
 var SAMPLE_SONGS = [
-  ['S001', '楽曲A', 'がっきょくえー', '[]'],
-  ['S002', '楽曲B', 'がっきょくびー', '[]'],
-  ['S003', '楽曲C', 'がっきょくしー', '[]'],
-  ['S004', 'あいうえおの歌（サンプル）', 'あいうえおのうた', '[]'],
-  ['S005', 'Sample <Song> & "記号"', 'さんぷるそんぐ', '[]'],
-  ['S006', 'よみ未登録のサンプル曲', '', '[]']
+  ['S001', '楽曲A', 'がっきょくえー'],
+  ['S002', '楽曲B', 'がっきょくびー'],
+  ['S003', '楽曲C', 'がっきょくしー'],
+  ['S004', 'あいうえおの歌（サンプル）', 'あいうえおのうた'],
+  ['S005', 'Sample <Song> & "記号"', 'さんぷるそんぐ'],
+  ['S006', 'よみ未登録のサンプル曲', '']
+];
+var SAMPLE_SETLISTS = [
+  ['東京公演（サンプル）', 1, '楽曲C'],
+  ['東京公演（サンプル）', 2, '楽曲A'],
+  ['愛知公演（サンプル）', 1, '楽曲A']
 ];
 
 // ---------------------------------------------------------------------------
@@ -48,78 +56,126 @@ function include(filename) {
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('楽曲管理')
-    .addItem('シートを初期化（サンプルデータ投入）', 'setupSheets')
+    .addItem('シートを初期化・プルダウンを更新', 'setupSheets')
+    .addItem('旧チェックを Setlists に移す（1 回だけ）', 'migrateChecksToSetlists')
     .addToUi();
 }
 
 // ---------------------------------------------------------------------------
-// 画面から呼ぶ関数（google.script.run）
+// 画面から呼ぶ関数（google.script.run）— 読み取りのみ
 // ---------------------------------------------------------------------------
 
-/** @return {{shows: Object[], songs: Object[], fetchedAt: string}} */
+/**
+ * @return {{
+ *   shows: Object[],
+ *   songs: Object[],              // performed_show_ids は Setlists から算出
+ *   setlists: Object<string, Object[]>,  // show_id → 曲順に並べた [{no, title, reading, song_id}]
+ *   warnings: string[],
+ *   fetchedAt: string
+ * }}
+ */
 function getInitialData() {
   var ss = getSpreadsheet_();
   var shows = readShows_(ss);
-  var songs = readSongs_(ss).songs.map(toClientSong_);
-  return { shows: shows, songs: songs, fetchedAt: new Date().toISOString() };
+  var songs = readSongs_(ss).songs;
+  var result = readSetlists_(ss, shows, songs);
+
+  var performed = {};
+  shows.forEach(function (show) {
+    result.setlists[show.show_id].forEach(function (entry) {
+      if (!entry.song_id) return;
+      var ids = performed[entry.song_id] || (performed[entry.song_id] = []);
+      if (ids.indexOf(show.show_id) === -1) ids.push(show.show_id);
+    });
+  });
+
+  return {
+    shows: shows,
+    songs: songs.map(function (song) {
+      return {
+        song_id: song.song_id,
+        title: song.title,
+        reading: song.reading,
+        performed_show_ids: performed[song.song_id] || []
+      };
+    }),
+    setlists: result.setlists,
+    warnings: result.warnings,
+    fetchedAt: new Date().toISOString()
+  };
 }
+
+// ---------------------------------------------------------------------------
+// 管理者用（エディタまたはスプレッドシートのメニューから手動実行）
+// ---------------------------------------------------------------------------
 
 /**
- * 指定公演での披露状態を ON/OFF する。他公演の記録は保持する。
- * @return {Object} 更新後の楽曲
+ * シートが無ければヘッダー付きで作成し、Setlists のプルダウン（入力規則）を設定する。
+ * 既存データは上書きしない。ダミーデータは Songs / Shows を新規作成したときだけ入れる。
  */
-function setSongPerformance(songId, showId, performed) {
-  songId = requireId_(songId, 'songId');
-  showId = requireId_(showId, 'showId');
-  if (typeof performed !== 'boolean') {
-    throw new Error('performed は true / false で指定してください。');
-  }
-
-  return withLock_(function () {
-    var ss = getSpreadsheet_();
-    var shows = readShows_(ss);
-    if (!shows.some(function (s) { return s.show_id === showId; })) {
-      throw new Error('存在しない公演 ID です: ' + showId);
-    }
-
-    // ロック取得後に最新の値を読み直し、対象公演だけを差分更新する。
-    var table = readSongs_(ss);
-    var song = findById_(table.songs, songId);
-    if (!song) {
-      throw new Error('存在しない楽曲 ID です: ' + songId);
-    }
-    if (song.error) {
-      throw new Error('「' + song.title + '」の performed_show_ids が壊れているため更新できません。' +
-        'スプレッドシート ' + SONGS_SHEET + ' の ' + song.rowNumber + ' 行目を確認してください。');
-    }
-
-    var ids = unique_(song.ids.filter(function (id) { return id !== showId; }));
-    if (performed) ids.push(showId);
-    ids = sortShowIds_(ids, shows);
-
-    table.sheet
-      .getRange(song.rowNumber, table.columns.performed_show_ids)
-      .setValue(JSON.stringify(ids));
-    SpreadsheetApp.flush();
-
-    song.ids = ids;
-    return toClientSong_(song);
-  });
-}
-
-// ---------------------------------------------------------------------------
-// 初期設定（エディタまたはメニューから手動実行）
-// ---------------------------------------------------------------------------
-
-/** Songs / Shows シートが無ければ作成し、ヘッダーとダミーデータを入れる。既存データは上書きしない。 */
 function setupSheets() {
   var ss = getSpreadsheet_();
   var created = [];
+  var fresh = false;
   if (ensureSheet_(ss, SHOWS_SHEET, SHOW_HEADERS, SAMPLE_SHOWS, 4)) created.push(SHOWS_SHEET);
-  if (ensureSheet_(ss, SONGS_SHEET, SONG_HEADERS, SAMPLE_SONGS, 4)) created.push(SONGS_SHEET);
-  return created.length
-    ? created.join(', ') + ' シートを作成しました。'
-    : '両シートとも既にデータがあるため、変更していません。';
+  if (ensureSheet_(ss, SONGS_SHEET, SONG_HEADERS, SAMPLE_SONGS, 3)) {
+    created.push(SONGS_SHEET);
+    fresh = true;
+  }
+  if (ensureSheet_(ss, SETLISTS_SHEET, SETLIST_HEADERS, fresh ? SAMPLE_SETLISTS : [], 1)) {
+    created.push(SETLISTS_SHEET);
+  }
+  applySetlistValidation_(ss);
+  return (created.length ? created.join(', ') + ' シートを作成しました。' : 'シートは作成済みです。') +
+    'Setlists のプルダウンを更新しました。';
+}
+
+/**
+ * 画面でチェックしていた頃の Songs.performed_show_ids を Setlists に移す（曲順 no は空欄）。
+ * 2 回目以降は何もしない。移した後は Songs の performed_show_ids 列を削除してよい。
+ */
+function migrateChecksToSetlists() {
+  var props = PropertiesService.getScriptProperties();
+  if (props.getProperty(MIGRATED_PROPERTY)) {
+    return '移行は実行済みのため、何もしていません。';
+  }
+
+  var ss = getSpreadsheet_();
+  setupSheets();
+  var shows = readShows_(ss);
+  var songsTable = readTable_(ss, SONGS_SHEET, SONG_HEADERS);
+  if (!songsTable.columns.performed_show_ids) {
+    props.setProperty(MIGRATED_PROPERTY, new Date().toISOString());
+    return 'Songs に performed_show_ids 列が無いため、移すものはありません。';
+  }
+
+  var existing = {};
+  readTable_(ss, SETLISTS_SHEET, SETLIST_HEADERS).rows.forEach(function (row) {
+    existing[row.get('show') + '\n' + row.get('title')] = true;
+  });
+
+  var rows = [];
+  shows.forEach(function (show) {
+    songsTable.rows.forEach(function (row) {
+      var ids;
+      try {
+        ids = JSON.parse(row.get('performed_show_ids') || '[]');
+      } catch (e) {
+        throw new Error('Songs ' + row.rowNumber + ' 行目の performed_show_ids が読めません。直してから再実行してください。');
+      }
+      var title = row.get('title');
+      if (!Array.isArray(ids) || ids.indexOf(show.show_id) === -1 || !title) return;
+      if (existing[show.show_name + '\n' + title] || existing[show.show_id + '\n' + title]) return;
+      rows.push([show.show_name, '', title]);
+    });
+  });
+
+  if (rows.length) {
+    var sheet = ss.getSheetByName(SETLISTS_SHEET);
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, SETLIST_HEADERS.length).setValues(rows);
+  }
+  props.setProperty(MIGRATED_PROPERTY, new Date().toISOString());
+  return rows.length + ' 件を Setlists に移しました。曲順（no）を入力してください。';
 }
 
 function ensureSheet_(ss, name, headers, sampleRows, textColumnCount) {
@@ -128,9 +184,32 @@ function ensureSheet_(ss, name, headers, sampleRows, textColumnCount) {
 
   sheet.getRange(1, 1, sheet.getMaxRows(), textColumnCount).setNumberFormat('@');
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-  sheet.getRange(2, 1, sampleRows.length, headers.length).setValues(sampleRows);
+  if (sampleRows.length) {
+    sheet.getRange(2, 1, sampleRows.length, headers.length).setValues(sampleRows);
+  }
   sheet.setFrozenRows(1);
   return true;
+}
+
+/** Setlists の show 列は Shows.show_name、title 列は Songs.title から選べるようにする。 */
+function applySetlistValidation_(ss) {
+  var setlists = readTable_(ss, SETLISTS_SHEET, SETLIST_HEADERS);
+  var shows = readTable_(ss, SHOWS_SHEET, SHOW_HEADERS);
+  var songs = readTable_(ss, SONGS_SHEET, SONG_HEADERS);
+  var rowCount = setlists.sheet.getMaxRows() - 1;
+
+  var pairs = [
+    [setlists.columns.show, shows.sheet, shows.columns.show_name],
+    [setlists.columns.title, songs.sheet, songs.columns.title]
+  ];
+  pairs.forEach(function (p) {
+    var source = p[1].getRange(2, p[2], p[1].getMaxRows() - 1, 1);
+    var rule = SpreadsheetApp.newDataValidation()
+      .requireValueInRange(source, true)
+      .setAllowInvalid(false)
+      .build();
+    setlists.sheet.getRange(2, p[0], rowCount, 1).setDataValidation(rule);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -174,7 +253,7 @@ function readTable_(ss, name, requiredHeaders) {
     rows.push({
       rowNumber: r + 1,
       get: (function (cells) {
-        return function (key) { return String(cells[columns[key] - 1]).trim(); };
+        return function (key) { return columns[key] ? String(cells[columns[key] - 1]).trim() : ''; };
       })(row)
     });
   }
@@ -215,92 +294,65 @@ function readSongs_(ss) {
     if (!id) return;
     if (seen[id]) throw new Error('Songs シートで song_id "' + id + '" が重複しています。');
     seen[id] = true;
-    var parsed = parseShowIds_(row.get('performed_show_ids'));
-    songs.push({
-      song_id: id,
-      title: row.get('title') || id,
-      reading: row.get('reading'),
-      ids: parsed.ids,
-      error: parsed.error,
-      rowNumber: row.rowNumber
+    songs.push({ song_id: id, title: row.get('title') || id, reading: row.get('reading') });
+  });
+  return { sheet: table.sheet, songs: songs };
+}
+
+/**
+ * Setlists を公演ごとに曲順で並べる。show は show_name か show_id、title は曲名か song_id で照合する。
+ * 照合できない行は warnings に入れる（公演不明の行は捨て、曲不明の行は曲名だけで表示する）。
+ */
+function readSetlists_(ss, shows, songs) {
+  var table = readTable_(ss, SETLISTS_SHEET, SETLIST_HEADERS);
+  var showByKey = {};
+  shows.forEach(function (s) {
+    showByKey[s.show_name] = s;
+    showByKey[s.show_id] = s;
+  });
+  var songByKey = {};
+  songs.forEach(function (s) {
+    songByKey[s.title] = s;
+    songByKey[s.song_id] = s;
+  });
+
+  var setlists = {};
+  shows.forEach(function (s) { setlists[s.show_id] = []; });
+  var warnings = [];
+
+  table.rows.forEach(function (row) {
+    var where = SETLISTS_SHEET + ' ' + row.rowNumber + ' 行目';
+    var showKey = row.get('show');
+    var title = row.get('title');
+    if (!showKey && !title) return;
+    var show = showByKey[showKey];
+    if (!show) {
+      warnings.push(where + ': 公演「' + showKey + '」が Shows にありません。');
+      return;
+    }
+    if (!title) {
+      warnings.push(where + ': 曲名が空です。');
+      return;
+    }
+    var song = songByKey[title];
+    if (!song) warnings.push(where + ': 曲名「' + title + '」が Songs にありません。');
+    var no = row.get('no');
+    setlists[show.show_id].push({
+      no: no,
+      title: song ? song.title : title,
+      reading: song ? song.reading : '',
+      song_id: song ? song.song_id : '',
+      _order: no !== '' && isFinite(Number(no)) ? Number(no) : Number.MAX_SAFE_INTEGER,
+      _row: row.rowNumber
     });
   });
-  return { sheet: table.sheet, columns: table.columns, songs: songs };
-}
 
-/** 破損データは空配列に読み替えず、error を付けて返す（更新を拒否するため）。 */
-function parseShowIds_(raw) {
-  if (raw === '') return { ids: [], error: '' };
-  var value;
-  try {
-    value = JSON.parse(raw);
-  } catch (e) {
-    return { ids: [], error: 'JSON として読めません: ' + raw };
-  }
-  if (!Array.isArray(value) || value.some(function (v) { return typeof v !== 'string'; })) {
-    return { ids: [], error: '文字列の配列ではありません: ' + raw };
-  }
-  return { ids: unique_(value), error: '' };
-}
-
-function toClientSong_(song) {
-  return {
-    song_id: song.song_id,
-    title: song.title,
-    reading: song.reading,
-    performed_show_ids: song.ids.slice(),
-    data_error: song.error || ''
-  };
-}
-
-// ---------------------------------------------------------------------------
-// 補助
-// ---------------------------------------------------------------------------
-
-function withLock_(fn) {
-  var lock = LockService.getScriptLock();
-  if (!lock.tryLock(LOCK_TIMEOUT_MS)) {
-    throw new Error('他の人が更新中です。少し待ってからもう一度お試しください。');
-  }
-  try {
-    return fn();
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-function requireId_(value, label) {
-  if (typeof value !== 'string' || !value.trim()) {
-    throw new Error(label + ' が指定されていません。');
-  }
-  return value.trim();
-}
-
-function findById_(songs, songId) {
-  for (var i = 0; i < songs.length; i++) {
-    if (songs[i].song_id === songId) return songs[i];
-  }
-  return null;
-}
-
-function unique_(list) {
-  var seen = {};
-  return list.filter(function (v) {
-    if (seen[v]) return false;
-    seen[v] = true;
-    return true;
+  Object.keys(setlists).forEach(function (id) {
+    setlists[id] = setlists[id]
+      .sort(function (a, b) { return a._order - b._order || a._row - b._row; })
+      .map(function (e) { return { no: e.no, title: e.title, reading: e.reading, song_id: e.song_id }; });
   });
-}
-
-/** 公演 ID を Shows の並び順に揃える（マスタに無い ID は末尾に残す）。 */
-function sortShowIds_(ids, shows) {
-  var rank = {};
-  shows.forEach(function (s, i) { rank[s.show_id] = i; });
-  return ids.slice().sort(function (a, b) {
-    var ra = a in rank ? rank[a] : shows.length;
-    var rb = b in rank ? rank[b] : shows.length;
-    return ra - rb;
-  });
+  return { setlists: setlists, warnings: warnings };
 }
 
 /** 2026/1/5 のような表示値を 2026-01-05 に揃える。解釈できなければそのまま返す。 */

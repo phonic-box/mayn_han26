@@ -8,10 +8,11 @@
   var state = {
     shows: [],
     songs: [],
+    setlists: {},       // show_id -> 曲順に並べたセットリスト
+    warnings: [],
     selection: L.ALL,
     query: '',
     filter: 'performed',  // 全公演の初期表示は「披露済み」で絞り込み
-    pending: {},        // songId -> { showId, performed } 保存中の操作
     loading: false,
     loadedAt: 0
   };
@@ -24,12 +25,10 @@
     filter: $('filter'),
     hint: $('mode-hint'),
     status: $('status'),
+    warnings: $('warnings'),
+    warningList: $('warning-list'),
     list: $('song-list'),
-    empty: $('empty'),
-    toast: $('toast'),
-    toastText: $('toast-text'),
-    toastReload: $('toast-reload'),
-    toastClose: $('toast-close')
+    empty: $('empty')
   };
 
   // google.script.run を Promise 化
@@ -60,6 +59,8 @@
       .then(function (data) {
         state.shows = data.shows;
         state.songs = data.songs;
+        state.setlists = data.setlists;
+        state.warnings = data.warnings;
         state.loadedAt = Date.now();
         if (L.isShowSelection(state.selection) && !findShow(state.selection)) {
           state.selection = L.ALL;
@@ -97,7 +98,7 @@
     select.textContent = '';
     select.appendChild(new Option('全公演', L.ALL));
     var group = document.createElement('optgroup');
-    group.label = '公演ごとに記録';
+    group.label = 'セットリストを見る';
     state.shows.forEach(function (show) {
       group.appendChild(new Option(showLabel(show), show.show_id));
     });
@@ -106,41 +107,43 @@
     select.disabled = false;
   }
 
-  /** 保存中の操作を画面上の状態に重ねる（サーバー確定までは見た目だけ）。 */
-  function viewSongs() {
-    return state.songs.map(function (song) {
-      var p = state.pending[song.song_id];
-      if (!p) return song;
-      var ids = song.performed_show_ids.filter(function (id) { return id !== p.showId; });
-      if (p.performed) ids.push(p.showId);
-      return Object.assign({}, song, { performed_show_ids: ids });
-    });
-  }
-
   function render() {
     var selection = state.selection;
     var isShow = L.isShowSelection(selection);
-    var view = L.buildView(viewSongs(), {
-      selection: selection,
-      query: state.query,
-      filter: state.filter,
-      keepIds: Object.keys(state.pending)
-    });
+    var fragment = document.createDocumentFragment();
+    var count;
 
-
-    if (selection === L.ALL) {
-      els.hint.textContent = '閲覧モード：記録するには上で公演を選んでください。';
+    els.filter.hidden = isShow;
+    if (isShow) {
+      var setlist = state.setlists[selection] || [];
+      var entries = L.filterSetlist(setlist, state.query);
+      entries.forEach(function (entry) { fragment.appendChild(renderSetlistRow(entry)); });
+      count = entries.length;
+      els.hint.textContent = '「' + showLabel(findShow(selection)) + '」のセットリスト（' + setlist.length + ' 曲）';
+      els.empty.textContent = setlist.length ? '該当する曲はありません。' : 'セットリストはまだ登録されていません。';
     } else {
-      els.hint.textContent = '「' + showLabel(findShow(selection)) + '」で歌われた曲にチェックを付けてください。';
+      var view = L.buildView(state.songs, { selection: selection, query: state.query, filter: state.filter });
+      view.items.forEach(function (song) { fragment.appendChild(renderSongRow(song)); });
+      count = view.items.length;
+      els.hint.textContent = '公演を選ぶと、その公演のセットリストを曲順で表示します。';
+      els.empty.textContent = '該当する曲はありません。';
     }
 
-    var fragment = document.createDocumentFragment();
-    view.items.forEach(function (song) {
-      fragment.appendChild(isShow ? renderEditableRow(song, selection) : renderReadonlyRow(song));
-    });
     els.list.textContent = '';
     els.list.appendChild(fragment);
-    els.empty.hidden = view.items.length > 0 || !state.loadedAt;
+    els.empty.hidden = count > 0 || !state.loadedAt;
+    renderWarnings();
+  }
+
+  /** シートの照合エラーは管理者向けに一覧の上へ出す */
+  function renderWarnings() {
+    els.warningList.textContent = '';
+    state.warnings.forEach(function (message) {
+      var li = document.createElement('li');
+      li.textContent = message;
+      els.warningList.appendChild(li);
+    });
+    els.warnings.hidden = state.warnings.length === 0;
   }
 
   /**
@@ -178,31 +181,29 @@
     return box;
   }
 
-  function errorChip(song) {
-    var chip = document.createElement('span');
-    chip.className = 'chip warn';
-    chip.textContent = '⚠ データ破損：シートを確認';
-    chip.title = song.data_error;
-    return chip;
+  function chip(text, className) {
+    var el = document.createElement('span');
+    el.className = 'chip' + (className ? ' ' + className : '');
+    el.textContent = text;
+    return el;
   }
 
-  function renderReadonlyRow(song) {
+  /** 全公演：曲ごとに披露済み／未披露と、歌われた公演名 */
+  function renderSongRow(song) {
     var li = document.createElement('li');
     var row = document.createElement('div');
     row.className = 'row';
     var text = textBlock(song);
 
-    var chips = document.createElement('span');
-    chips.className = 'shows';
-    if (song.data_error) chips.appendChild(errorChip(song));
-    song.performed_show_ids.forEach(function (id) {
-      var show = findShow(id);
-      var chip = document.createElement('span');
-      chip.className = 'chip';
-      chip.textContent = show ? show.show_name : id;
-      chips.appendChild(chip);
-    });
-    if (chips.childNodes.length) text.appendChild(chips);
+    if (song.performed_show_ids.length) {
+      var chips = document.createElement('span');
+      chips.className = 'shows';
+      song.performed_show_ids.forEach(function (id) {
+        var show = findShow(id);
+        chips.appendChild(chip(show ? show.show_name : id));
+      });
+      text.appendChild(chips);
+    }
 
     var performed = song.performed_show_ids.length > 0;
     var badge = document.createElement('span');
@@ -215,32 +216,21 @@
     return li;
   }
 
-  function renderEditableRow(song, showId) {
+  /** 個別公演：セットリストの 1 曲（曲順つき） */
+  function renderSetlistRow(entry) {
     var li = document.createElement('li');
-    var checked = song.performed_show_ids.indexOf(showId) !== -1;
-    var saving = !!state.pending[song.song_id];
-    if (checked) li.classList.add('is-checked');
-    if (saving) li.classList.add('is-saving');
-
-    var row = document.createElement('label');
+    var row = document.createElement('div');
     row.className = 'row';
-    var text = textBlock(song);
-    var savingNote = document.createElement('span');
-    savingNote.className = 'saving';
-    savingNote.textContent = '保存中…';
-    text.appendChild(savingNote);
-    if (song.data_error) text.appendChild(errorChip(song));
 
-    var box = document.createElement('input');
-    box.type = 'checkbox';
-    box.className = 'check';
-    box.checked = checked;
-    box.disabled = saving || !!song.data_error;
-    box.dataset.songId = song.song_id;
-    box.setAttribute('aria-label', song.title + ' をこの公演で披露済みにする');
+    var no = document.createElement('span');
+    no.className = 'setlist-no';
+    no.textContent = entry.no || '–';
 
+    var text = textBlock(entry);
+    if (!entry.song_id) text.appendChild(chip('Songs に未登録', 'warn'));
+
+    row.appendChild(no);
     row.appendChild(text);
-    row.appendChild(box);
     li.appendChild(row);
     return li;
   }
@@ -255,72 +245,12 @@
     els.status.hidden = true;
   }
 
-  function showToast(message) {
-    els.toastText.textContent = message;
-    els.toast.hidden = false;
-  }
-
-  // -------------------------------------------------------------------------
-  // 披露記録の更新
-  // -------------------------------------------------------------------------
-
-  function onCheck(event) {
-    var box = event.target;
-    if (!box.classList || !box.classList.contains('check')) return;
-    var songId = box.dataset.songId;
-    var showId = state.selection;
-    if (!L.isShowSelection(showId) || state.pending[songId]) return;
-
-    var performed = box.checked;
-    state.pending[songId] = { showId: showId, performed: performed };
-    render();
-
-    callServer('setSongPerformance', songId, showId, performed)
-      .then(function (updated) {
-        replaceSong(updated);
-      })
-      .catch(function (err) {
-        var song = findSong(songId);
-        showToast('「' + (song ? song.title : songId) + '」を保存できませんでした：' + errorMessage(err));
-      })
-      .then(function () {
-        delete state.pending[songId];
-        render();
-      });
-  }
-
-  function findSong(songId) {
-    for (var i = 0; i < state.songs.length; i++) {
-      if (state.songs[i].song_id === songId) return state.songs[i];
-    }
-    return null;
-  }
-
-  function replaceSong(updated) {
-    var found = false;
-    state.songs = state.songs.map(function (s) {
-      if (s.song_id !== updated.song_id) return s;
-      found = true;
-      return updated;
-    });
-    if (!found) state.songs.push(updated);
-  }
-
   // -------------------------------------------------------------------------
   // イベント
   // -------------------------------------------------------------------------
 
-  function setFilter(filter) {
-    state.filter = filter;
-    Array.prototype.forEach.call(els.filter.querySelectorAll('button'), function (b) {
-      b.setAttribute('aria-pressed', String(b.dataset.filter === filter));
-    });
-  }
-
   els.select.addEventListener('change', function () {
     state.selection = els.select.value;
-    // 全公演は披露済みの確認用、個別公演はこれからチェックする未披露曲から
-    setFilter(L.isShowSelection(state.selection) ? 'unperformed' : 'performed');
     render();
     window.scrollTo(0, 0);
   });
@@ -333,18 +263,14 @@
   els.filter.addEventListener('click', function (event) {
     var button = event.target.closest('button[data-filter]');
     if (!button) return;
-    setFilter(button.dataset.filter);
+    state.filter = button.dataset.filter;
+    Array.prototype.forEach.call(els.filter.querySelectorAll('button'), function (b) {
+      b.setAttribute('aria-pressed', String(b === button));
+    });
     render();
   });
 
-  els.list.addEventListener('change', onCheck);
   els.reload.addEventListener('click', load);
-
-  els.toastClose.addEventListener('click', function () { els.toast.hidden = true; });
-  els.toastReload.addEventListener('click', function () {
-    els.toast.hidden = true;
-    load();
-  });
 
   // スマホでアプリに戻ってきたとき、古いデータなら自動で読み直す
   document.addEventListener('visibilitychange', function () {

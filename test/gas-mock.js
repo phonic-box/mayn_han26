@@ -9,6 +9,7 @@
     this.name = name;
     this.cells = [];        // 2 次元配列（行 → 列）
     this.formats = {};      // "row,col" -> numberFormat
+    this.validations = [];  // setDataValidation の記録
     this.frozenRows = 0;
   }
   MockSheet.prototype.getName = function () { return this.name; };
@@ -85,6 +86,10 @@
     this.forEachCell(function (r, c) { sheet.write(r, c, value); });
     return this;
   };
+  MockRange.prototype.setDataValidation = function (rule) {
+    this.sheet.validations.push({ row: this.row, col: this.col, numRows: this.numRows, numCols: this.numCols, rule: rule });
+    return this;
+  };
   MockRange.prototype.setNumberFormat = function (format) {
     var formats = this.sheet.formats;
     this.forEachCell(function (r, c) { formats[r + ',' + c] = format; });
@@ -101,30 +106,31 @@
   /** GAS のグローバル（SpreadsheetApp など）一式を作る */
   function createGasGlobals() {
     var ss = new MockSpreadsheet();
-    var lock = { held: false, fail: false, acquired: 0 };
+    var props = {};
     return {
       spreadsheet: ss,
-      lock: lock,
+      props: props,
       globals: {
         SpreadsheetApp: {
           getActiveSpreadsheet: function () { return ss; },
           openById: function () { return ss; },
           flush: function () {},
-          getUi: function () { throw new Error('UI is not available in mock'); }
+          getUi: function () { throw new Error('UI is not available in mock'); },
+          newDataValidation: function () {
+            var rule = {};
+            var builder = {
+              requireValueInRange: function (range, showDropdown) { rule.source = range; rule.showDropdown = showDropdown; return builder; },
+              setAllowInvalid: function (allow) { rule.allowInvalid = allow; return builder; },
+              build: function () { return rule; }
+            };
+            return builder;
+          }
         },
         PropertiesService: {
-          getScriptProperties: function () { return { getProperty: function () { return null; } }; }
-        },
-        LockService: {
-          getScriptLock: function () {
+          getScriptProperties: function () {
             return {
-              tryLock: function () {
-                if (lock.fail || lock.held) return false;
-                lock.held = true;
-                lock.acquired++;
-                return true;
-              },
-              releaseLock: function () { lock.held = false; }
+              getProperty: function (key) { return key in props ? props[key] : null; },
+              setProperty: function (key, value) { props[key] = String(value); }
             };
           }
         }

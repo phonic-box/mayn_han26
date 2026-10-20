@@ -40,16 +40,13 @@
     <main>
       <p id="mode-hint" class="hint"></p>
       <div id="status" class="status" role="status" hidden></div>
+      <div id="warnings" class="status warnings" hidden>
+        <p>シートに確認が必要な行があります（管理者向け）</p>
+        <ul id="warning-list"></ul>
+      </div>
       <ul id="song-list" class="song-list"></ul>
       <p id="empty" class="empty" hidden>該当する曲はありません。</p>
-
     </main>
-
-    <div id="toast" class="toast" role="alert" hidden>
-      <span id="toast-text"></span>
-      <button type="button" id="toast-reload" class="btn small">再読み込み</button>
-      <button type="button" id="toast-close" class="icon-btn small" aria-label="閉じる">×</button>
-    </div>
 
     <?!= include('Logic'); ?>
     <?!= include('Scripts'); ?>

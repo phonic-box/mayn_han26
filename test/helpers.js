@@ -12,7 +12,7 @@ function bootServer() {
   vm.runInContext(fs.readFileSync(path.join(SRC, 'Code.gs'), 'utf8'), context, { filename: 'Code.gs' });
   // VM 内のオブジェクトは別 realm なので、JSON 経由で素のオブジェクトにして比較しやすくする
   const call = (name, ...args) => JSON.parse(JSON.stringify(context[name](...args)));
-  return { context, call, ss: gas.spreadsheet, lock: gas.lock };
+  return { context, call, ss: gas.spreadsheet, props: gas.props };
 }
 
 /** Logic.html の <script> 部分を読み込む */

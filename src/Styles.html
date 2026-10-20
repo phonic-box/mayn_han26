@@ -109,6 +109,7 @@
     display: flex; gap: 4px; margin-top: 10px; padding: 4px;
     background: var(--coral-soft); border-radius: 999px;
   }
+  .segmented[hidden] { display: none; }
   .segmented button {
     flex: 1; min-height: 36px; border: 0; border-radius: 999px;
     background: transparent; color: var(--coral); cursor: pointer;
@@ -127,6 +128,8 @@
     background: var(--warn-soft); color: var(--warn); font-size: 14px;
   }
   .status.error { background: var(--coral-soft); color: var(--danger); }
+  .warnings p { margin: 0 0 4px; font-family: var(--font-head); font-weight: 800; }
+  .warnings ul { margin: 0; padding-left: 1.2em; font-size: 13px; overflow-wrap: anywhere; }
 
   /* 楽曲一覧 */
   .song-list { list-style: none; margin: 0; padding: 0; }
@@ -159,48 +162,13 @@
   .badge.performed { background: var(--grad); color: #fff; }
   .badge.unperformed { background: var(--sky-soft); color: #1f7fae; }
 
-  /* まるいチェック */
-  .check {
-    flex: none; appearance: none; -webkit-appearance: none;
-    width: 34px; height: 34px; margin: 0; border-radius: 50%;
-    border: 2.5px solid var(--salmon); background: #fff;
-    display: grid; place-items: center; cursor: pointer;
-    transition: background .15s, transform .15s;
+  /* セットリストの曲順 */
+  .setlist-no {
+    flex: none; min-width: 34px; height: 34px; padding: 0 6px; border-radius: 999px;
+    display: grid; place-items: center;
+    background: var(--grad); color: #fff; font: 800 15px var(--font-head);
   }
-  .check::after {
-    content: ""; width: 9px; height: 16px; margin-top: -4px;
-    border: solid #fff; border-width: 0 3.5px 3.5px 0; border-radius: 1px;
-    transform: rotate(45deg) scale(0); transition: transform .15s;
-  }
-  .check:checked { background: var(--grad); border-color: var(--coral); }
-  .check:checked::after { transform: rotate(45deg) scale(1); }
-  .check:focus-visible { outline: 3px solid var(--sky); outline-offset: 2px; }
-  .check:disabled { cursor: default; }
-  li.is-checked { border-color: var(--salmon); background: #fff; }
-  li.is-saving { opacity: .6; }
-  li.is-saving .saving { display: block; }
-  .saving { display: none; font-size: 12px; color: var(--coral); }
 
   .empty { text-align: center; color: var(--muted); padding: 28px 0; font-family: var(--font-head); font-weight: 800; }
 
-  .btn {
-    min-height: 44px; padding: 8px 18px; border: 2px solid var(--line); border-radius: 999px;
-    background: #fff; cursor: pointer; font: 800 14px var(--font-head);
-  }
-  .btn.small { min-height: 34px; padding: 4px 14px; font-size: 13px; }
-  .btn:disabled { opacity: .5; cursor: default; }
-
-  .toast {
-    position: fixed; left: 12px; right: 12px; z-index: 20;
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
-    max-width: 616px; margin: 0 auto;
-    display: flex; align-items: center; gap: 8px;
-    padding: 10px 10px 10px 18px; border-radius: 24px;
-    background: var(--danger); color: #fff; font-size: 14px;
-    box-shadow: 0 8px 22px rgba(64, 36, 58, .25);
-  }
-  .toast[hidden] { display: none; }
-  .toast span { flex: 1; overflow-wrap: anywhere; }
-  .toast .btn { background: #fff; color: var(--danger); border: 0; }
-  .toast .icon-btn { background: transparent; color: #fff; }
 </style>

@@ -2,7 +2,7 @@
  * GAS にデプロイせずに画面を確認するためのプレビューを dist/preview.html に生成する。
  * Code.gs をブラウザ内のモック（test/gas-mock.js）上で動かし、google.script.run を模倣する。
  *
- *   ?fail=1   すべての保存を失敗させる（T11 の確認用）
+ *   ?fail=1   読み込みを失敗させる
  *   ?delay=ms サーバー応答の遅延（既定 600ms）
  */
 const fs = require('node:fs');
@@ -35,7 +35,7 @@ const shim = `
             var args = JSON.parse(JSON.stringify(Array.prototype.slice.call(arguments)));
             setTimeout(function () {
               try {
-                if (fail && name !== 'getInitialData') throw new Error('（プレビュー）通信に失敗しました');
+                if (fail) throw new Error('（プレビュー）通信に失敗しました');
                 var result = JSON.parse(JSON.stringify(window[name].apply(null, args)));
                 success && success(result);
               } catch (e) {

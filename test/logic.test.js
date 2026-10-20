@@ -37,9 +37,15 @@ test('個別公演では、その公演に対して披露済み／未披露を�
   assert.deepEqual(ids(build({ selection: 'P001', filter: 'unperformed' })), ['S003', 'S004', 'S002']);
 });
 
-test('keepIds の曲は絞り込みに合わなくても残る（保存中の曲）', () => {
-  assert.deepEqual(ids(build({ selection: 'P001', filter: 'unperformed', keepIds: ['S001'] })), ['S003', 'S004', 'S002', 'S001']);
-  assert.deepEqual(ids(build({ selection: 'P001', filter: 'unperformed', keepIds: ['S001'], query: 'Zeb' })), ['S003']);
+test('セットリストは検索語で絞っても曲順を保つ', () => {
+  const entries = [
+    { no: '1', title: '楽曲C', reading: '', song_id: 'S001' },
+    { no: '2', title: 'Zebra', reading: '', song_id: 'S003' },
+    { no: '3', title: '楽曲A', reading: '', song_id: 'S002' }
+  ];
+  assert.deepEqual(L.filterSetlist(entries, '').map((e) => e.no), ['1', '2', '3']);
+  assert.deepEqual(L.filterSetlist(entries, '楽曲').map((e) => e.no), ['1', '3']);
+  assert.deepEqual(L.filterSetlist(undefined, '').length, 0);
 });
 
 test('曲名の ’ は半角の \' で検索できる', () => {
@@ -48,12 +54,22 @@ test('曲名の ’ は半角の \' で検索できる', () => {
   assert.equal(view.items.length, 1);
 });
 
-test('T08: 曲名・読みの部分一致検索（全角半角・カタカナを吸収）', () => {
+test('T08: 曲名・読みの先頭一致検索（全角半角・カタカナを吸収）', () => {
   assert.deepEqual(ids(build({ query: '楽曲' })), ['S002', 'S001']);
   assert.deepEqual(ids(build({ query: 'ガッキョクエ' })), ['S002']);
   assert.deepEqual(ids(build({ query: 'ｚｅｂ' })), ['S003']);
-  assert.deepEqual(ids(build({ query: 'いうえ' })), ['S004']);
+  assert.deepEqual(ids(build({ query: 'あいう' })), ['S004']);
+  assert.deepEqual(ids(build({ query: 'いうえ' })), [], '途中からは一致しない');
+  assert.deepEqual(ids(build({ query: '曲C' })), [], '途中からは一致しない');
   assert.deepEqual(ids(build({ query: '存在しない' })), []);
+});
+
+test('先頭の括弧・引用符は飛ばして先頭一致する', () => {
+  const list = [{ song_id: 'M1', title: '「愛してる」なんて', reading: '', performed_show_ids: [] }];
+  const hit = (query) => L.buildView(list, { selection: L.ALL, query, filter: 'all' }).items.length;
+  assert.equal(hit('愛して'), 1);
+  assert.equal(hit('「愛'), 1);
+  assert.equal(hit('なんて'), 0);
 });
 
 test('検索・絞り込みで元データは変わらない', () => {
